@@ -1,91 +1,96 @@
-import type { JWTOptions, PayloadData, TokenData, TokenEncrypted } from '@app/Types.ts'
-import { AES128GCM } from '@algorithms/AES-128-GCM.ts'
-import { AES256GCM } from '@algorithms/AES-256-GCM.ts'
-import { parseTimeToMs } from '@app/Parser.ts'
-import {
-  checkExpiration,
-  isValidPayload,
-  isValidToken,
-  validateData,
-  validateOptions,
-  validateSecret,
-  validateToken,
-  validateVersion
-} from '@app/Validator.ts'
+import type * as Types from '@app/Types.ts'
+import * as Cipher from '@cipher/index.ts'
+import * as Helper from '@app/Helper.ts'
+import * as Parser from '@app/Parser.ts'
+import * as Validator from '@app/Validator.ts'
+
+/** Default AES-GCM cipher for JWT. */
+const defaultCipher: Types.Cipher = {
+  /** Encrypt plaintext to token envelope. */
+  encrypt: (plaintext, secret, keySizeBytes, issuer, version) =>
+    Cipher.AESGCM.encrypt(plaintext, secret, keySizeBytes, issuer, version),
+  /** Decrypt token envelope to plaintext. */
+  decrypt: (token, secret, keySizeBytes, issuer, version) =>
+    Cipher.AESGCM.decrypt(token, secret, keySizeBytes, issuer, version)
+}
 
 /**
- * JSON Web Token utility backed by AES-GCM encryption.
- * @description Signs, verifies, and decodes tokens with versioning, expiration handling.
+ * Signed, encrypted token API.
+ * @description Sign payloads and decode/verify tokens with AES-GCM.
  */
 export default class JWT {
-  /** The encryption algorithm implementation */
-  readonly #algorithm: AES128GCM | AES256GCM
-  /** The issuer bound to the token */
+  /** Pluggable encrypt/decrypt implementation */
+  readonly #cipher: Types.Cipher
+  /** AES key size in bytes (16 or 32) */
+  readonly #keySizeBytes: 16 | 32
+  /** Issuer string used in AAD */
   readonly #issuer: string
-  /** The secret used to derive the encryption key */
+  /** Shared secret for key derivation */
   readonly #secret: string
-  /** The expiration time in milliseconds */
+  /** Token lifetime in milliseconds */
   readonly #expireInMs: number
-  /** The version of the token */
+  /** Schema version for AAD and validation */
   readonly #version: string
 
   /**
-   * Creates a JWT instance with the provided options.
-   * @param options - Configuration including secret, version, expiration, and algorithm
+   * Create JWT instance with options.
+   * @description Validates options and parses expireIn.
+   * @param options - Secret, version, expireIn, optional cipher and issuer
    */
-  constructor(options: JWTOptions) {
-    validateOptions(options)
-    validateSecret(options.secret)
+  constructor(options: Types.JWTOptions) {
+    Validator.Validator.validateOptions(options)
+    Validator.Validator.validateSecret(options.secret)
+    this.#cipher = options.cipher ?? defaultCipher
     this.#secret = options.secret
     this.#issuer = options.issuer ?? 'secure-token'
-    this.#algorithm = options.algorithm
-      ? options.algorithm === 'aes-128-gcm' ? new AES128GCM() : new AES256GCM()
-      : new AES128GCM()
-    this.#expireInMs = parseTimeToMs(options.expireIn)
+    this.#keySizeBytes = options.algorithm === 'aes-256-gcm' ? 32 : 16
+    this.#expireInMs = Parser.Parser.parseTimeToMs(options.expireIn)
     this.#version = options.version
   }
 
   /**
-   * Decodes a token and returns the original payload.
-   * @param token - Encoded token string
-   * @returns Decoded payload data
-   * @throws {Error} When token format/structure is invalid or verification fails
+   * Decode token and return payload data.
+   * @description Validates structure, expiry, version; returns payload.data.
+   * @param token - Base64-encoded token string
+   * @returns Decrypted payload data
+   * @throws {Error} When invalid, expired, or version mismatch
    */
   async decode(token: string): Promise<unknown> {
-    validateToken(token)
-    let tokenData: TokenData
+    Validator.Validator.validateToken(token)
+    let tokenData: Types.TokenData
     try {
       tokenData = JSON.parse(atob(token))
     } catch {
       throw new Error('Invalid token format')
     }
-    if (!isValidToken(tokenData)) {
+    if (!Validator.Validator.isValidToken(tokenData)) {
       throw new Error('Invalid token structure')
     }
-    checkExpiration(tokenData.exp)
-    validateVersion(tokenData.version, this.#version)
-    const tokenEncrypted: TokenEncrypted = {
+    Validator.Validator.checkExpiration(tokenData.exp)
+    Validator.Validator.validateVersion(tokenData.version, this.#version)
+    const tokenEncrypted: Types.TokenEncrypted = {
       encrypted: tokenData.encrypted,
       iv: tokenData.iv,
       tag: tokenData.tag
     }
-    const payloadDecrypted = await this.#algorithm.decrypt(
+    const payloadDecrypted = await this.#cipher.decrypt(
       tokenEncrypted,
       this.#secret,
+      this.#keySizeBytes,
       this.#issuer,
       this.#version
     )
-    let payload: PayloadData
+    let payload: Types.PayloadData
     try {
       payload = JSON.parse(payloadDecrypted)
     } catch {
       throw new Error('Invalid payload format')
     }
-    if (!isValidPayload(payload)) {
+    if (!Validator.Validator.isValidPayload(payload)) {
       throw new Error('Invalid payload structure')
     }
-    validateVersion(payload.version, tokenData.version)
-    checkExpiration(payload.exp)
+    Validator.Validator.validateVersion(payload.version, tokenData.version)
+    Validator.Validator.checkExpiration(payload.exp)
     if (payload.exp !== tokenData.exp || payload.iat !== tokenData.iat) {
       throw new Error('Token timestamp mismatch')
     }
@@ -93,34 +98,36 @@ export default class JWT {
   }
 
   /**
-   * Signs arbitrary data into a token string.
-   * @param data - Data to embed in the token payload
-   * @returns Encoded token string
-   * @throws {Error} When input validation or encryption fails
+   * Sign payload and return token.
+   * @description Encrypts with exp/iat/version; returns base64 token.
+   * @param payloadData - User data to embed in token
+   * @returns Base64-encoded signed token
+   * @throws {Error} When data null/undefined or cipher fails
    */
-  async sign(data: unknown): Promise<string> {
-    validateData(data)
-    const now = Math.floor(Date.now() / 1000)
-    const exp = now + Math.ceil(this.#expireInMs / 1000)
-    const payload: PayloadData = {
-      data,
-      exp,
-      iat: now,
+  async sign(payloadData: unknown): Promise<string> {
+    Validator.Validator.validateData(payloadData)
+    const currentUnixTime = Helper.Helper.currentUnixSeconds()
+    const expiresAtUnix = currentUnixTime + Math.ceil(this.#expireInMs / 1000)
+    const payload: Types.PayloadData = {
+      data: payloadData,
+      exp: expiresAtUnix,
+      iat: currentUnixTime,
       version: this.#version
     }
     const payloadString = JSON.stringify(payload)
-    const tokenEncrypted: TokenEncrypted = await this.#algorithm.encrypt(
+    const tokenEncrypted: Types.TokenEncrypted = await this.#cipher.encrypt(
       payloadString,
       this.#secret,
+      this.#keySizeBytes,
       this.#issuer,
       this.#version
     )
-    const tokenData: TokenData = {
+    const tokenData: Types.TokenData = {
       encrypted: tokenEncrypted.encrypted,
       iv: tokenEncrypted.iv,
       tag: tokenEncrypted.tag,
-      exp,
-      iat: now,
+      exp: expiresAtUnix,
+      iat: currentUnixTime,
       version: this.#version
     }
     const tokenString = JSON.stringify(tokenData)
@@ -128,9 +135,10 @@ export default class JWT {
   }
 
   /**
-   * Verifies token validity.
-   * @param token - Encoded token string
-   * @returns True when the token is valid; false otherwise
+   * Verify token without returning payload.
+   * @description Returns true if decode succeeds, false otherwise.
+   * @param token - Base64-encoded token string
+   * @returns True when valid and not expired
    */
   async verify(token: string): Promise<boolean> {
     try {
@@ -141,9 +149,8 @@ export default class JWT {
     }
   }
 }
-
 /**
- * Types re-export.
- * @description Public API for types used by this package.
+ * Re-export public types.
+ * @description Exposes Types module for consumers.
  */
 export * from '@app/Types.ts'

@@ -2,17 +2,6 @@ import { assert, assertEquals, assertRejects } from '@std/assert'
 import { delay } from '@std/async'
 import JWT from '@app/index.ts'
 
-Deno.test('Expiration - token should be valid before expiry', async () => {
-  const jwt = new JWT({
-    secret: 'test-secret',
-    expireIn: '1h',
-    version: '1.0.0'
-  })
-  const token = await jwt.sign({ data: 'test' })
-  const isValid = await jwt.verify(token)
-  assert(isValid)
-})
-
 Deno.test('Expiration - expired token should fail', async () => {
   const jwt = new JWT({
     secret: 'test-secret',
@@ -54,4 +43,15 @@ Deno.test('Expiration - token exp matches expected time', async () => {
   const tokenData = JSON.parse(decoded)
   const now = Math.floor(Date.now() / 1000)
   assertEquals(tokenData.exp - now, 1800)
+})
+
+Deno.test('Expiration - token should be valid before expiry', async () => {
+  const jwt = new JWT({
+    secret: 'test-secret',
+    expireIn: '1h',
+    version: '1.0.0'
+  })
+  const token = await jwt.sign({ data: 'test' })
+  const isValid = await jwt.verify(token)
+  assert(isValid)
 })

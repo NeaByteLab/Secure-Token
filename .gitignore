@@ -1,5 +1,6 @@
 # Deno
 .deno/
+coverage/
 deno.lock
 
 # IDE
@@ -10,8 +11,7 @@ deno.lock
 .DS_Store
 Thumbs.db
 
-# Astro
-.astro/
-.vscode/
+# Node
 dist/
 node_modules/
+package-lock.json
