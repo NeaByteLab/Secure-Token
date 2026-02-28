@@ -4,16 +4,6 @@ import * as Helper from '@app/Helper.ts'
 import * as Parser from '@app/Parser.ts'
 import * as Validator from '@app/Validator.ts'
 
-/** Default AES-GCM cipher for JWT. */
-const defaultCipher: Types.Cipher = {
-  /** Encrypt plaintext to token envelope. */
-  encrypt: (plaintext, secret, keySizeBytes, issuer, version) =>
-    Cipher.AESGCM.encrypt(plaintext, secret, keySizeBytes, issuer, version),
-  /** Decrypt token envelope to plaintext. */
-  decrypt: (token, secret, keySizeBytes, issuer, version) =>
-    Cipher.AESGCM.decrypt(token, secret, keySizeBytes, issuer, version)
-}
-
 /**
  * Signed, encrypted token API.
  * @description Sign payloads and decode/verify tokens with AES-GCM.
@@ -31,6 +21,15 @@ export default class JWT {
   readonly #expireInMs: number
   /** Schema version for AAD and validation */
   readonly #version: string
+  /** Single message for decode failures. */
+  static readonly #decodeErrorMessage = 'Invalid token'
+  /** Default AES-GCM cipher for JWT. */
+  static readonly #defaultCipher: Types.Cipher = {
+    encrypt: (plaintext, secret, keySizeBytes, issuer, version) =>
+      Cipher.AESGCM.encrypt(plaintext, secret, keySizeBytes, issuer, version),
+    decrypt: (token, secret, keySizeBytes, issuer, version) =>
+      Cipher.AESGCM.decrypt(token, secret, keySizeBytes, issuer, version)
+  }
 
   /**
    * Create JWT instance with options.
@@ -40,7 +39,7 @@ export default class JWT {
   constructor(options: Types.JWTOptions) {
     Validator.Validator.validateOptions(options)
     Validator.Validator.validateSecret(options.secret)
-    this.#cipher = options.cipher ?? defaultCipher
+    this.#cipher = options.cipher ?? JWT.#defaultCipher
     this.#secret = options.secret
     this.#issuer = options.issuer ?? 'secure-token'
     this.#keySizeBytes = options.algorithm === 'aes-256-gcm' ? 32 : 16
@@ -49,52 +48,58 @@ export default class JWT {
   }
 
   /**
-   * Decode token and return payload data.
+   * Decode token and return payload data
    * @description Validates structure, expiry, version; returns payload.data.
    * @param token - Base64-encoded token string
    * @returns Decrypted payload data
    * @throws {Error} When invalid, expired, or version mismatch
    */
   async decode(token: string): Promise<unknown> {
-    Validator.Validator.validateToken(token)
-    let tokenData: Types.TokenData
     try {
-      tokenData = JSON.parse(atob(token))
-    } catch {
-      throw new Error('Invalid token format')
+      Validator.Validator.validateToken(token)
+      let tokenData: Types.TokenData
+      try {
+        tokenData = JSON.parse(atob(token))
+      } catch {
+        throw new Error(JWT.#decodeErrorMessage)
+      }
+      if (!Validator.Validator.isValidToken(tokenData)) {
+        throw new Error(JWT.#decodeErrorMessage)
+      }
+      Validator.Validator.checkExpiration(tokenData.exp)
+      Validator.Validator.validateVersion(tokenData.version, this.#version)
+      const tokenEncrypted: Types.TokenEncrypted = {
+        encrypted: tokenData.encrypted,
+        iv: tokenData.iv,
+        tag: tokenData.tag
+      }
+      const payloadDecrypted = await this.#cipher.decrypt(
+        tokenEncrypted,
+        this.#secret,
+        this.#keySizeBytes,
+        this.#issuer,
+        this.#version
+      )
+      let payload: Types.PayloadData
+      try {
+        payload = JSON.parse(payloadDecrypted)
+      } catch {
+        throw new Error(JWT.#decodeErrorMessage)
+      }
+      if (!Validator.Validator.isValidPayload(payload)) {
+        throw new Error(JWT.#decodeErrorMessage)
+      }
+      Validator.Validator.validateVersion(payload.version, tokenData.version)
+      Validator.Validator.checkExpiration(payload.exp)
+      if (payload.exp !== tokenData.exp || payload.iat !== tokenData.iat) {
+        throw new Error(JWT.#decodeErrorMessage)
+      }
+      return payload.data
+    } catch (err) {
+      throw err instanceof Error && err.message === JWT.#decodeErrorMessage
+        ? err
+        : new Error(JWT.#decodeErrorMessage)
     }
-    if (!Validator.Validator.isValidToken(tokenData)) {
-      throw new Error('Invalid token structure')
-    }
-    Validator.Validator.checkExpiration(tokenData.exp)
-    Validator.Validator.validateVersion(tokenData.version, this.#version)
-    const tokenEncrypted: Types.TokenEncrypted = {
-      encrypted: tokenData.encrypted,
-      iv: tokenData.iv,
-      tag: tokenData.tag
-    }
-    const payloadDecrypted = await this.#cipher.decrypt(
-      tokenEncrypted,
-      this.#secret,
-      this.#keySizeBytes,
-      this.#issuer,
-      this.#version
-    )
-    let payload: Types.PayloadData
-    try {
-      payload = JSON.parse(payloadDecrypted)
-    } catch {
-      throw new Error('Invalid payload format')
-    }
-    if (!Validator.Validator.isValidPayload(payload)) {
-      throw new Error('Invalid payload structure')
-    }
-    Validator.Validator.validateVersion(payload.version, tokenData.version)
-    Validator.Validator.checkExpiration(payload.exp)
-    if (payload.exp !== tokenData.exp || payload.iat !== tokenData.iat) {
-      throw new Error('Token timestamp mismatch')
-    }
-    return payload.data
   }
 
   /**

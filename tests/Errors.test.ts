@@ -28,30 +28,7 @@ Deno.test('Errors - empty token should fail', async () => {
       await jwt.decode('')
     },
     Error,
-    'Token must be a non-empty string'
-  )
-})
-
-Deno.test('Errors - invalid token format (base64 or JSON) should fail', async () => {
-  const jwt = new JWT({
-    secret: 'test-secret',
-    expireIn: '1h',
-    version: '1.0.0'
-  })
-  await assertRejects(
-    async () => {
-      await jwt.decode('invalid-base64!!!')
-    },
-    Error,
-    'Invalid token format'
-  )
-  const invalidJson = btoa('not valid json')
-  await assertRejects(
-    async () => {
-      await jwt.decode(invalidJson)
-    },
-    Error,
-    'Invalid token format'
+    'Invalid token'
   )
 })
 
@@ -78,7 +55,7 @@ Deno.test('Errors - invalid payload format should fail', async () => {
       await jwt.decode(token)
     },
     Error,
-    'Invalid payload format'
+    'Invalid token'
   )
 })
 
@@ -105,7 +82,30 @@ Deno.test('Errors - invalid payload structure should fail', async () => {
       await jwt.decode(token)
     },
     Error,
-    'Invalid payload structure'
+    'Invalid token'
+  )
+})
+
+Deno.test('Errors - invalid token format (base64 or JSON) should fail', async () => {
+  const jwt = new JWT({
+    secret: 'test-secret',
+    expireIn: '1h',
+    version: '1.0.0'
+  })
+  await assertRejects(
+    async () => {
+      await jwt.decode('invalid-base64!!!')
+    },
+    Error,
+    'Invalid token'
+  )
+  const invalidJson = btoa('not valid json')
+  await assertRejects(
+    async () => {
+      await jwt.decode(invalidJson)
+    },
+    Error,
+    'Invalid token'
   )
 })
 
@@ -121,7 +121,7 @@ Deno.test('Errors - invalid token structure should fail', async () => {
       await jwt.decode(invalidStructure)
     },
     Error,
-    'Invalid token structure'
+    'Invalid token'
   )
 })
 

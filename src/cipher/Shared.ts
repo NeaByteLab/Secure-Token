@@ -3,6 +3,12 @@
  * @description Key derivation, IV, hex, and AAD.
  */
 export class Shared {
+  /** Max ciphertext size in bytes (DoS mitigation). */
+  static readonly maxEncryptedBytes = 256 * 1024
+  /** Auth tag length in bytes (AES-GCM). */
+  static readonly tagBytes = 16
+  /** IV length in bytes (AES-GCM). */
+  static readonly ivBytes = 12
   /** Decode ArrayBuffer to UTF-8 string */
   static readonly decoder = new TextDecoder()
   /** Encode string to UTF-8 bytes */
@@ -61,12 +67,30 @@ export class Shared {
 
   /**
    * Parse hex string to bytes.
-   * @description Two hex chars per byte.
-   * @param hex - Hex string
+   * @description Decodes hex to bytes; validates format and max length.
+   * @param hex - Hex string (even length, 0-9a-fA-F only)
+   * @param maxBytes - Optional max size in bytes; throws if exceeded
    * @returns Decoded bytes
+   * @throws {Error} When hex length odd, non-hex chars, or exceeds maxBytes
    */
-  static hexToBytes(hex: string): Uint8Array {
-    const bytes = new Uint8Array(hex.length / 2)
+  static hexToBytes(hex: string, maxBytes?: number): Uint8Array {
+    if (typeof hex !== 'string') {
+      throw new Error('Invalid hex length')
+    }
+    if (hex.length === 0) {
+      return new Uint8Array(0)
+    }
+    if (hex.length % 2 !== 0) {
+      throw new Error('Invalid hex length')
+    }
+    const byteCount = hex.length / 2
+    if (maxBytes !== undefined && byteCount > maxBytes) {
+      throw new Error('Token too large')
+    }
+    if (!/^[0-9a-fA-F]+$/.test(hex)) {
+      throw new Error('Invalid hex format')
+    }
+    const bytes = new Uint8Array(byteCount)
     for (let i = 0; i < hex.length; i += 2) {
       bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
     }

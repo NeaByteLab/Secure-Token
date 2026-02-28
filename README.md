@@ -107,7 +107,7 @@ const isValid = await jwt.verify(token)
 const payload = await jwt.decode(token)
 ```
 
-`decode` throws on invalid, expired, or wrong-version tokens. Use try/catch and optionally check `error.message` (e.g. `'Token expired at ...'`, `'Version mismatch...'`, `'Invalid token format'`).
+`decode` throws on invalid, expired, or wrong-version tokens. All decode failures use the same message `'Invalid token'` (no information leakage).
 
 ```ts
 try {
@@ -115,12 +115,8 @@ try {
   // use payload
 } catch (err) {
   const msg = err instanceof Error ? err.message : ''
-  if (msg.includes('expired')) {
-    // token expired; re-login or refresh
-  } else if (msg.includes('Version mismatch')) {
-    // wrong app version
-  } else {
-    // invalid format, tampered, or wrong secret/issuer
+  if (msg === 'Invalid token') {
+    // invalid, expired, wrong version, or wrong secret — re-login or refresh
   }
 }
 ```
@@ -140,18 +136,22 @@ const jwt = new JWT({
 
 ### Custom cipher
 
-You can plug in a custom encrypt/decrypt implementation via the `Cipher` interface (see exported type `Cipher`). It must expose `encrypt(plaintext, secret, keySizeBytes, issuer, version)` and `decrypt(token, secret, keySizeBytes, issuer, version)`, both returning a Promise.
+- You can plug in a custom encrypt/decrypt implementation via the `Cipher` interface (see exported type `Cipher`). It must expose `encrypt(plaintext, secret, keySizeBytes, issuer, version)` and `decrypt(token, secret, keySizeBytes, issuer, version)`, both returning a Promise.
+
+- **Contract (isolation):** The implementation must use `secret` (for key derivation or lookup) so tokens are isolated per secret, and must bind `issuer` and `version` (e.g. as AAD) so tokens cannot be used across issuer/version. Ignoring them breaks isolation.
+
+- **Return shape:** `encrypt` must return `{ encrypted, iv, tag }` as hex strings; `iv` 24 hex chars (12 bytes), `tag` 32 hex chars (16 bytes) for compatibility with the default path.
 
 ```ts
 import JWT, { type Cipher, type TokenEncrypted } from '@neabyte/secure-token'
 
 const myCipher: Cipher = {
-  async encrypt(plaintext, _secret, _keySizeBytes, _issuer, _version) {
-    // your encrypt logic → return { encrypted, iv, tag } (hex strings)
+  async encrypt(plaintext, secret, keySizeBytes, issuer, version) {
+    // use secret, issuer, version; return { encrypted, iv, tag } hex (iv 24, tag 32 chars)
     return { encrypted: '...', iv: '...', tag: '...' }
   },
-  async decrypt(token: TokenEncrypted, _secret, _keySizeBytes, _issuer, _version) {
-    // your decrypt logic → return plaintext string
+  async decrypt(token: TokenEncrypted, secret, keySizeBytes, issuer, version) {
+    // use same secret, issuer, version; return plaintext string
     return '...'
   }
 }
@@ -163,6 +163,8 @@ const jwt = new JWT({
   cipher: myCipher
 })
 ```
+
+See [Custom Cipher](./examples/custom-cipher.md) for a full contract-compliant example.
 
 ### Sign non-object data
 
@@ -267,6 +269,8 @@ Inner payload `{ data, iat, exp, version }` is JSON-encoded then AES-GCM encrypt
 
 ## Tips & Best Practices
 
+Start with [Error Handling](./examples/error-handling.md) and [Verify vs Decode](./examples/verify-vs-decode.md) for integration; then pick by use case below.
+
 - [Salt Secrets With a Strong Random Generator](./examples/salt-secrets.md)
 - [Token Reissue During Rotation Window](./examples/migration-window.md)
 - [Refresh Token Pattern (Rolling Expiration)](./examples/refresh-rolling.md)
@@ -276,6 +280,8 @@ Inner payload `{ data, iat, exp, version }` is JSON-encoded then AES-GCM encrypt
 - [Versioning Schema](./examples/versioning-schema.md) — Breaking changes and migration window.
 - [Error Handling](./examples/error-handling.md) — Map error messages to refresh, upgrade, or 401.
 - [Serverless and Env-Based Secrets](./examples/serverless-env.md) — One JWT instance per process; Deno Deploy, Fly, Cloud Run.
+- [Typed Payload](./examples/typed-payload.md) — Interface, cast or type guard after decode, handler usage.
+- [Verify vs Decode](./examples/verify-vs-decode.md) — When to use verify (middleware) vs decode (handler); snippets.
 
 ### Security Considerations
 
@@ -284,15 +290,14 @@ Inner payload `{ data, iat, exp, version }` is JSON-encoded then AES-GCM encrypt
 > - Use strong, unique secrets per environment.
 > - Keep secrets out of source control; use secret managers.
 > - Ensure time sync (NTP) on all nodes; expiration depends on accurate clocks.
+> - Keep payload small (ids and minimal claims); token size grows with payload.
 
 ## Troubleshooting
 
 | Issue                         | Cause / fix                                                                              |
 | :---------------------------- | :--------------------------------------------------------------------------------------- |
 | Invalid time format           | `expireIn` must be digits + unit: `ms`, `s`, `m`, `h`, `d`, `M`, `y` (e.g. `1h`, `30m`). |
-| Invalid token format          | Pass the exact string from `sign`; avoid whitespace or encoding changes.                 |
-| Token expired                 | Increase `expireIn` or issue a new token.                                                |
-| Version mismatch              | Instance `version` must match the token’s embedded version.                              |
+| Invalid token (decode throws) | Token invalid, expired, wrong version, or wrong secret; re-login or refresh.             |
 | Wrong issuer/secret/algorithm | Changing any of these invalidates existing tokens.                                       |
 
 ## Testing

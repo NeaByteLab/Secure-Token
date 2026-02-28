@@ -15,7 +15,7 @@ Deno.test('Expiration - expired token should fail', async () => {
       await jwt.decode(token)
     },
     Error,
-    'Token expired'
+    'Invalid token'
   )
 })
 

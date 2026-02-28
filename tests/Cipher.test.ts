@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from '@std/assert'
+import { assertEquals, assertRejects, assertThrows } from '@std/assert'
 import { AESGCM } from '@cipher/index.ts'
 import { Shared } from '@cipher/Shared.ts'
 
@@ -82,4 +82,28 @@ Deno.test('Shared - generateIV length 12', () => {
 Deno.test('Shared - hexToBytes empty string', () => {
   const bytes = Shared.hexToBytes('')
   assertEquals(bytes.length, 0)
+})
+
+Deno.test('Shared - hexToBytes non-hex throws', () => {
+  assertThrows(
+    () => Shared.hexToBytes('gg'),
+    Error,
+    'Invalid hex format'
+  )
+})
+
+Deno.test('Shared - hexToBytes odd length throws', () => {
+  assertThrows(
+    () => Shared.hexToBytes('0123456789a'),
+    Error,
+    'Invalid hex length'
+  )
+})
+
+Deno.test('Shared - hexToBytes over maxBytes throws', () => {
+  assertThrows(
+    () => Shared.hexToBytes('ab'.repeat(256 * 1024 + 1), 256 * 1024),
+    Error,
+    'Token too large'
+  )
 })

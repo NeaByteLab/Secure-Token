@@ -1,11 +1,11 @@
 /**
  * Encrypt/decrypt contract for token cipher.
- * @description Pluggable cipher implementation interface.
+ * @description Secret and AAD required; iv 24 hex, tag 32 hex.
  */
 export interface Cipher {
   /**
    * Decrypt token envelope to plaintext.
-   * @description Decodes hex and verifies tag.
+   * @description Must use secret and issuer/version for isolation.
    * @param token - Encrypted envelope
    * @param secret - Shared secret
    * @param keySizeBytes - 16 or 32
@@ -22,13 +22,13 @@ export interface Cipher {
   ): Promise<string>
   /**
    * Encrypt plaintext to token envelope.
-   * @description Produces encrypted hex, IV, and tag.
+   * @description Returns hex; iv 24 chars, tag 32 chars.
    * @param plaintext - String to encrypt
    * @param secret - Shared secret
    * @param keySizeBytes - 16 or 32
    * @param issuer - Issuer for AAD
    * @param version - Version for AAD
-   * @returns Encrypted envelope with iv and tag
+   * @returns Encrypted envelope; iv 24 hex, tag 32 hex
    */
   encrypt(
     plaintext: string,

@@ -12,6 +12,7 @@ Deno.test('JWT - create instance', () => {
 
 Deno.test('JWT - custom cipher is used when provided', async () => {
   const plaintexts: string[] = []
+  // Mock ignores secret/issuer for simplicity; production cipher must use them for isolation.
   const customCipher = {
     encrypt: (plaintext: string) => {
       plaintexts.push(plaintext)

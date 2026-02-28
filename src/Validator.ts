@@ -6,6 +6,9 @@ import * as Helper from '@app/Helper.ts'
  * @description Guards and type guards for JWT flow.
  */
 export class Validator {
+  /** Max token string length (DoS mitigation). */
+  static readonly maxTokenLength = 512 * 1024
+
   /**
    * Throws if token or payload expired.
    * @description Compares exp to current Unix time.
@@ -101,14 +104,17 @@ export class Validator {
   }
 
   /**
-   * Ensure token is non-empty string.
-   * @description Validates token input for decode/verify.
+   * Validate token string and size limit.
+   * @description Validates token input for decode/verify; rejects oversized tokens.
    * @param tokenString - Token to validate
-   * @throws {Error} When empty or not string
+   * @throws {Error} When empty, not string, or exceeds max length
    */
   static validateToken(tokenString: unknown): void {
     if (typeof tokenString !== 'string' || tokenString.length === 0) {
       throw new Error('Token must be a non-empty string')
+    }
+    if (tokenString.length > Validator.maxTokenLength) {
+      throw new Error('Token too large')
     }
   }
 

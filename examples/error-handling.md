@@ -1,26 +1,25 @@
 # Error Handling
 
-`sign` and `decode` throw on failure; `verify` returns `false` and does not throw. Map `error.message` from `decode` (or `sign`) to the right action: refresh/re-login for expired, upgrade client for version mismatch, 401 for invalid format or tampering.
+`sign` and `decode` throw on failure; `verify` returns `false` and does not throw. The library normalizes all **decode** failures to a single message so callers cannot distinguish causes (no information leakage).
 
 > [!NOTE]
 > Use `verify` when you only need to know if the token is valid (no payload). It never throws; use try/catch only for `sign` and `decode`.
 
-## Error messages and actions
+## Decode: single message
 
-| Message (contains)                                     | Meaning                             | Suggested action                    |
-| :----------------------------------------------------- | :---------------------------------- | :---------------------------------- |
-| `Token expired`                                        | Token or payload past `exp`         | Refresh token or force re-login     |
-| `Version mismatch`                                     | Token version ≠ instance            | Ask client to upgrade; or migration |
-| `Invalid token format`                                 | Base64/JSON decode failed           | 401 Unauthorized                    |
-| `Invalid token structure`                              | Missing/wrong envelope fields       | 401 Unauthorized                    |
-| `Invalid payload format` / `Invalid payload structure` | Decrypt ok but payload invalid      | 401 Unauthorized                    |
-| `Token timestamp mismatch`                             | Outer and inner iat/exp don’t match | 401 Unauthorized                    |
-| `Data cannot be null or undefined`                     | `sign(null)` or `sign(undefined)`   | 400 Bad Request (caller bug)        |
+All failures from `decode` (invalid format, expired, wrong version, wrong secret, tampered, etc.) throw with the same message: **`'Invalid token'`**. You cannot branch by cause; treat any decode failure as 401 and direct the user to re-login or refresh.
 
-> [!TIP]
-> Decryption failures (wrong secret, wrong issuer, tampered ciphertext) typically surface as a generic error from the cipher; treat as 401.
+## Messages you can branch on
 
-## Example: try/catch decode and branch by message
+| Message (exact or contains)             | When                                   | Suggested action              |
+| :-------------------------------------- | :------------------------------------- | :---------------------------- |
+| `Invalid token`                         | `decode` failed (any cause)            | 401; re-login or refresh      |
+| `Data cannot be null or undefined`      | `sign(null)` or `sign(undefined)`      | 400 Bad Request (caller bug)  |
+| Constructor / options / expireIn errors | Invalid options, empty secret, bad TTL | 400 or 500; fix configuration |
+
+Constructor and `sign` may throw other messages (e.g. `Secret must be a non-empty string`, `Invalid time format`). Only **decode** is normalized to `'Invalid token'`.
+
+## Example: try/catch decode
 
 ```ts
 import JWT from '@neabyte/secure-token'
@@ -38,13 +37,10 @@ async function handleToken(token: string): Promise<{ status: number; body?: unkn
     const payload = await jwt.decode(token)
     return { status: 200, body: payload }
   } catch (err) {
-    // Step: read error message and map to status + body
+    // Step: all decode failures are 'Invalid token'; return 401
     const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('Token expired')) {
-      return { status: 401, body: { code: 'TOKEN_EXPIRED', hint: 'Refresh or re-login' } }
-    }
-    if (msg.includes('Version mismatch')) {
-      return { status: 401, body: { code: 'VERSION_MISMATCH', hint: 'Upgrade client' } }
+    if (msg === 'Invalid token') {
+      return { status: 401, body: { code: 'INVALID_TOKEN', hint: 'Re-login or refresh' } }
     }
     return { status: 401, body: { code: 'INVALID_TOKEN' } }
   }

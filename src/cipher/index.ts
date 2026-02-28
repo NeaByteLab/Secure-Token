@@ -27,9 +27,12 @@ export class AESGCM {
   ): Promise<string> {
     try {
       const derivedKey = await Shared.Shared.deriveKey(secret, keySizeBytes)
-      const iv = Shared.Shared.hexToBytes(token.iv)
-      const tag = Shared.Shared.hexToBytes(token.tag)
-      const encrypted = Shared.Shared.hexToBytes(token.encrypted)
+      const iv = Shared.Shared.hexToBytes(token.iv, Shared.Shared.ivBytes)
+      const tag = Shared.Shared.hexToBytes(token.tag, Shared.Shared.tagBytes)
+      if (iv.length !== Shared.Shared.ivBytes || tag.length !== Shared.Shared.tagBytes) {
+        throw new Error('Invalid token format')
+      }
+      const encrypted = Shared.Shared.hexToBytes(token.encrypted, Shared.Shared.maxEncryptedBytes)
       const aad = Shared.Shared.buildAad(issuer, version)
       const ciphertextWithTag = new Uint8Array(encrypted.length + tag.length)
       ciphertextWithTag.set(encrypted)
