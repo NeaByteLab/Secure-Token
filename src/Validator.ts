@@ -16,6 +16,9 @@ export class Validator {
    * @throws {Error} When expired
    */
   static checkExpiration(expiresAtUnix: number): void {
+    if (!Number.isFinite(expiresAtUnix)) {
+      throw new Error('Invalid expiration')
+    }
     const currentUnixTime = Helper.Helper.currentUnixSeconds()
     if (expiresAtUnix <= currentUnixTime) {
       throw new Error(`Token expired at ${new Date(expiresAtUnix * 1000).toISOString()}`)
@@ -29,16 +32,26 @@ export class Validator {
    * @returns True when valid PayloadData
    */
   static isValidPayload(payload: unknown): payload is Types.PayloadData {
+    if (typeof payload !== 'object' || payload === null) {
+      return false
+    }
+    const payloadRecord = payload as Record<string, unknown>
+    if (
+      !Object.hasOwn(payloadRecord, 'data') ||
+      !Object.hasOwn(payloadRecord, 'exp') ||
+      !Object.hasOwn(payloadRecord, 'iat') ||
+      !Object.hasOwn(payloadRecord, 'version')
+    ) {
+      return false
+    }
+    const expirationTimestamp = payloadRecord['exp']
+    const issuedAtTimestamp = payloadRecord['iat']
     return (
-      typeof payload === 'object' &&
-      payload !== null &&
-      'data' in payload &&
-      'exp' in payload &&
-      'iat' in payload &&
-      'version' in payload &&
-      typeof (payload as Types.PayloadData).exp === 'number' &&
-      typeof (payload as Types.PayloadData).iat === 'number' &&
-      typeof (payload as Types.PayloadData).version === 'string'
+      typeof expirationTimestamp === 'number' &&
+      Number.isFinite(expirationTimestamp) &&
+      typeof issuedAtTimestamp === 'number' &&
+      Number.isFinite(issuedAtTimestamp) &&
+      typeof payloadRecord['version'] === 'string'
     )
   }
 
@@ -49,21 +62,31 @@ export class Validator {
    * @returns True when valid TokenData
    */
   static isValidToken(tokenData: unknown): tokenData is Types.TokenData {
+    if (typeof tokenData !== 'object' || tokenData === null) {
+      return false
+    }
+    const tokenRecord = tokenData as Record<string, unknown>
+    if (
+      !Object.hasOwn(tokenRecord, 'encrypted') ||
+      !Object.hasOwn(tokenRecord, 'iv') ||
+      !Object.hasOwn(tokenRecord, 'tag') ||
+      !Object.hasOwn(tokenRecord, 'exp') ||
+      !Object.hasOwn(tokenRecord, 'iat') ||
+      !Object.hasOwn(tokenRecord, 'version')
+    ) {
+      return false
+    }
+    const expirationTimestamp = tokenRecord['exp']
+    const issuedAtTimestamp = tokenRecord['iat']
     return (
-      typeof tokenData === 'object' &&
-      tokenData !== null &&
-      'encrypted' in tokenData &&
-      'iv' in tokenData &&
-      'tag' in tokenData &&
-      'exp' in tokenData &&
-      'iat' in tokenData &&
-      'version' in tokenData &&
-      typeof (tokenData as Types.TokenData).encrypted === 'string' &&
-      typeof (tokenData as Types.TokenData).iv === 'string' &&
-      typeof (tokenData as Types.TokenData).tag === 'string' &&
-      typeof (tokenData as Types.TokenData).exp === 'number' &&
-      typeof (tokenData as Types.TokenData).iat === 'number' &&
-      typeof (tokenData as Types.TokenData).version === 'string'
+      typeof tokenRecord['encrypted'] === 'string' &&
+      typeof tokenRecord['iv'] === 'string' &&
+      typeof tokenRecord['tag'] === 'string' &&
+      typeof expirationTimestamp === 'number' &&
+      Number.isFinite(expirationTimestamp) &&
+      typeof issuedAtTimestamp === 'number' &&
+      Number.isFinite(issuedAtTimestamp) &&
+      typeof tokenRecord['version'] === 'string'
     )
   }
 
@@ -88,6 +111,24 @@ export class Validator {
   static validateOptions(options: unknown): void {
     if (options === null || options === undefined || typeof options !== 'object') {
       throw new Error('Options must be an object')
+    }
+  }
+
+  /**
+   * Require required option keys as own properties (prototype-pollution safe).
+   * @description In browser env, only own properties must be used for security.
+   * @param options - Options object
+   * @param requiredKeys - Required own property names
+   * @throws {Error} When a required key is missing or not own
+   */
+  static validateRequiredOptionsOwn(
+    options: Record<string, unknown>,
+    requiredKeys: readonly string[]
+  ): void {
+    for (const key of requiredKeys) {
+      if (!Object.hasOwn(options, key)) {
+        throw new Error(`Options must include own property: ${key}`)
+      }
     }
   }
 

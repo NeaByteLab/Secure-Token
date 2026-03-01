@@ -34,20 +34,32 @@ Deno.test('Errors - empty token should fail', async () => {
 
 Deno.test('Errors - invalid payload format should fail', async () => {
   const badPayload = 'not valid json'
-  const customCipher = {
-    encrypt: () =>
+  const customCipher: Types.Cipher = {
+    encrypt: (
+      _plaintext: string,
+      _secret: string,
+      _keySizeBytes: 16 | 32,
+      _issuer: string,
+      _version: string
+    ) =>
       Promise.resolve({
         encrypted: 'ee',
         iv: '112233445566778899aabbcc',
         tag: '00112233445566778899aabbccddeeff'
       }),
-    decrypt: () => Promise.resolve(badPayload)
+    decrypt: (
+      _token: Types.TokenEncrypted,
+      _secret: string,
+      _keySizeBytes: 16 | 32,
+      _issuer: string,
+      _version: string
+    ) => Promise.resolve(badPayload)
   }
   const jwt = new JWT({
     secret: 'test-secret',
     expireIn: '1h',
     version: '1.0.0',
-    cipher: customCipher as import('@app/Types.ts').Cipher
+    cipher: customCipher
   })
   const token = await jwt.sign({ x: 1 })
   await assertRejects(
@@ -61,20 +73,32 @@ Deno.test('Errors - invalid payload format should fail', async () => {
 
 Deno.test('Errors - invalid payload structure should fail', async () => {
   const badPayload = JSON.stringify({ wrong: 'shape' })
-  const customCipher = {
-    encrypt: () =>
+  const customCipher: Types.Cipher = {
+    encrypt: (
+      _plaintext: string,
+      _secret: string,
+      _keySizeBytes: 16 | 32,
+      _issuer: string,
+      _version: string
+    ) =>
       Promise.resolve({
         encrypted: 'ee',
         iv: '112233445566778899aabbcc',
         tag: '00112233445566778899aabbccddeeff'
       }),
-    decrypt: () => Promise.resolve(badPayload)
+    decrypt: (
+      _token: Types.TokenEncrypted,
+      _secret: string,
+      _keySizeBytes: 16 | 32,
+      _issuer: string,
+      _version: string
+    ) => Promise.resolve(badPayload)
   }
   const jwt = new JWT({
     secret: 'test-secret',
     expireIn: '1h',
     version: '1.0.0',
-    cipher: customCipher as import('@app/Types.ts').Cipher
+    cipher: customCipher
   })
   const token = await jwt.sign({ x: 1 })
   await assertRejects(

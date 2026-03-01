@@ -18,6 +18,79 @@ Deno.test('Validator - checkExpiration with future time does not throw', () => {
   Validator.checkExpiration(futureTime)
 })
 
+Deno.test('Validator - checkExpiration with NaN throws', () => {
+  assertThrows(() => Validator.checkExpiration(NaN), Error, 'Invalid expiration')
+})
+
+Deno.test('Validator - checkExpiration with Infinity throws', () => {
+  assertThrows(() => Validator.checkExpiration(Infinity), Error, 'Invalid expiration')
+})
+
+Deno.test('Validator - isValidPayload with exp NaN returns false', () => {
+  const payload = {
+    data: {},
+    exp: NaN,
+    iat: Math.floor(Date.now() / 1000),
+    version: '1.0.0'
+  }
+  assertEquals(Validator.isValidPayload(payload), false)
+})
+
+Deno.test('Validator - isValidPayload with exp Infinity returns false', () => {
+  const payload = {
+    data: {},
+    exp: Infinity,
+    iat: Math.floor(Date.now() / 1000),
+    version: '1.0.0'
+  }
+  assertEquals(Validator.isValidPayload(payload), false)
+})
+
+Deno.test('Validator - isValidPayload with empty object returns false', () => {
+  assertEquals(Validator.isValidPayload({}), false)
+})
+
+Deno.test('Validator - isValidToken with exp NaN returns false', () => {
+  const tokenData = {
+    encrypted: 'e',
+    iv: '0'.repeat(24),
+    tag: '0'.repeat(32),
+    exp: NaN,
+    iat: Math.floor(Date.now() / 1000),
+    version: '1.0.0'
+  }
+  assertEquals(Validator.isValidToken(tokenData), false)
+})
+
+Deno.test('Validator - isValidToken with exp Infinity returns false', () => {
+  const tokenData = {
+    encrypted: 'e',
+    iv: '0'.repeat(24),
+    tag: '0'.repeat(32),
+    exp: Infinity,
+    iat: Math.floor(Date.now() / 1000),
+    version: '1.0.0'
+  }
+  assertEquals(Validator.isValidToken(tokenData), false)
+})
+
+Deno.test('Validator - isValidPayload rejects empty object under prototype pollution', () => {
+  const future = Math.floor(Date.now() / 1000) + 3600
+  const proto = Object.getPrototypeOf({}) as Record<string, unknown>
+  proto['data'] = {}
+  proto['exp'] = future
+  proto['iat'] = Math.floor(Date.now() / 1000)
+  proto['version'] = '1.0.0'
+  try {
+    assertEquals(Validator.isValidPayload({}), false)
+  } finally {
+    delete proto['data']
+    delete proto['exp']
+    delete proto['iat']
+    delete proto['version']
+  }
+})
+
 Deno.test('Validator - isValidPayload with exp as string', () => {
   const payloadData = {
     data: {},
@@ -164,6 +237,42 @@ Deno.test('Validator - validateOptions with undefined', () => {
     Error,
     'Options must be an object'
   )
+})
+
+Deno.test('Validator - validateRequiredOptionsOwn rejects missing required key', () => {
+  assertThrows(
+    () =>
+      Validator.validateRequiredOptionsOwn({ secret: 'x', version: '1' }, [
+        'secret',
+        'version',
+        'expireIn'
+      ]),
+    Error,
+    'own property: expireIn'
+  )
+})
+
+Deno.test('Validator - validateRequiredOptionsOwn rejects inherited key', () => {
+  const proto = { secret: 'x', version: '1', expireIn: '1h' }
+  const opts = Object.create(proto)
+  assertThrows(
+    () =>
+      Validator.validateRequiredOptionsOwn(opts as Record<string, unknown>, [
+        'secret',
+        'version',
+        'expireIn'
+      ]),
+    Error,
+    'own property: secret'
+  )
+})
+
+Deno.test('Validator - validateRequiredOptionsOwn accepts all own keys', () => {
+  Validator.validateRequiredOptionsOwn({ secret: 'x', version: '1', expireIn: '1h' }, [
+    'secret',
+    'version',
+    'expireIn'
+  ])
 })
 
 Deno.test('Validator - validateSecret with empty string', () => {

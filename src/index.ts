@@ -38,13 +38,21 @@ export default class JWT {
    */
   constructor(options: Types.JWTOptions) {
     Validator.Validator.validateOptions(options)
-    Validator.Validator.validateSecret(options.secret)
-    this.#cipher = options.cipher ?? JWT.#defaultCipher
-    this.#secret = options.secret
-    this.#issuer = options.issuer ?? 'secure-token'
-    this.#keySizeBytes = options.algorithm === 'aes-256-gcm' ? 32 : 16
-    this.#expireInMs = Parser.Parser.parseTimeToMs(options.expireIn)
-    this.#version = options.version
+    const opts = options as unknown as Record<string, unknown>
+    Validator.Validator.validateRequiredOptionsOwn(opts, ['secret', 'version', 'expireIn'])
+    Validator.Validator.validateSecret(opts['secret'])
+    this.#secret = opts['secret'] as string
+    this.#version = opts['version'] as string
+    this.#expireInMs = Parser.Parser.parseTimeToMs(opts['expireIn'] as string)
+    this.#cipher = Object.hasOwn(opts, 'cipher') && opts['cipher'] != null
+      ? (opts['cipher'] as Types.Cipher)
+      : JWT.#defaultCipher
+    this.#issuer = Object.hasOwn(opts, 'issuer') && typeof opts['issuer'] === 'string'
+      ? opts['issuer']
+      : 'secure-token'
+    this.#keySizeBytes = Object.hasOwn(opts, 'algorithm') && opts['algorithm'] === 'aes-256-gcm'
+      ? 32
+      : 16
   }
 
   /**
